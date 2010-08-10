@@ -148,6 +148,14 @@ VirtualProtectEx.argtypes = [
 	c_uint,		# Protection
 	c_void_p ]	# Old protection
 VirtualProtectEx.restype = ErrorIfZero
+
+VirtualQueryEx = windll.kernel32.VirtualQueryEx
+VirtualQueryEx.argtypes = [
+    c_int,      # HANDLE hProces
+    c_void_p,   # LPCVOID lpAddress
+    c_void_p,   # PMEMORY_BASIC_INFORMATION lpBuffer
+    c_longlong ] # SIZE_T dwLength
+VirtualQueryEx.restype = ErrorIfZero
 	
 CloseHandle = windll.kernel32.CloseHandle
 CloseHandle.argtypes = [ c_int ]
