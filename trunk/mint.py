@@ -14,7 +14,7 @@ class mint( object ):
         self._is_win64 = (temp_void_p.value > (2**32))
         self._mem_map = None
         self._READ_ATTRIBUTES       = [1, 2, 4, 6, 9, 11, 12, 14, 17, 19, 20, 22, 25, 27, 28, 30]
-        self._WRITE_ATTRIBUTES  = [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]
+        self._WRITE_ATTRIBUTES      = [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]
         self._EXECUTE_ATTRIBUTES    = [2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31]
         self._cache = [(0, [])] * (0x80000000 >> 12)
         self._cacheCycle = 1
@@ -28,7 +28,12 @@ class mint( object ):
     def _openProcess( self, target_pid ):
         bytes_read = c_uint(0)
         adjustDebugPrivileges()
-        self._process = OpenProcess( win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ | win32con.PROCESS_VM_WRITE | win32con.PROCESS_VM_OPERATION, 0, target_pid )
+        self._process = OpenProcess( 
+                win32con.PROCESS_QUERY_INFORMATION | 
+                win32con.PROCESS_VM_READ | 
+                win32con.PROCESS_VM_WRITE | 
+                win32con.PROCESS_VM_OPERATION, 
+                0, target_pid )
 
     def deprotectMem( self, addr, size ):
         old_protection = c_uint(0)
@@ -227,11 +232,11 @@ class mint( object ):
 
     def getMemoryMapWithQuery( self ):
         if self._is_win64:
-            return "Not supported on x64"
+            raise Excpetion("Not supported on x64")
         result = {}
 
-        # Enum modules sections and there sizes
-        modules = ARRAY( c_void_p, 100 )(0)
+        # Enum modules sections and sizes
+        modules = ARRAY( c_void_p, 0x1000 )(0)
         bytes_written = c_uint(0)
         EnumProcessModules( self._process, byref(modules), sizeof(modules), byref(bytes_written) )
         num_modules = bytes_written.value / sizeof(c_void_p(0))
@@ -248,7 +253,7 @@ class mint( object ):
             result[module_base] = (module_cut_name, module_info.SizeOfImage, 0)
             # Get the sections
             module_bin = self.readMemory(module_base, 0x1000) #module_info.SizeOfImage)
-            parsed_pe = pefile.PE(data=module_bin, fast_load=True)
+            parsed_pe = PE(data=module_bin, fast_load=True)
             for section in parsed_pe.sections:
                 section_addr = (section.VirtualAddress & 0xfffff000l) + module_base
                 section_size = section.SizeOfRawData
@@ -258,33 +263,10 @@ class mint( object ):
                 elif (section_size & 0xfff) != 0:
                     section_size += 0x1000 - (section_size & 0xfff)
                 # Append to list
-                result[section_addr] = (module_cut_name + section.Name.replace('\x00', ''), section_size)
+                result[section_addr] = (module_cut_name + section.Name.replace('\x00', ''), section_size, 1)
             
-        # Can't be done remotly!
-###     # Get heaps
-###     heaps = ARRAY( c_int, 1000 )(0)
-###     num_heaps = GetProcessHeaps( 1000, byref(heaps) )
-###     if num_heaps > 1000:
-###         raise Exception('Too many heaps')
-###     for heap_id in range(num_heaps):
-###         heap = heaps[heap_id]
-###         entry = PROCESS_HEAP_ENTRY(0)
-###         heap_walk_result = HeapWalk(heap, byref(entry))
-###         while heap_walk_result != 0:
-###             addr = entry.lpData & 0xfffff000l
-###             if addr in result.keys():
-###                 continue
-###             size = entry.cbData + entry.cbOverhead
-###             # Algin to end of page
-###             if 0 == size:
-###                 size = 0x1000
-###             elif (size & 0xfff) != 0:
-###                 size += 0x1000 - (size & 0xfff)
-###             # Append to list
-###             result[addr] = ("HEAP%04x" % heap_id, size)
-
         # Get all other memory and attributes of pages
-        memory_map = ARRAY( c_uint, 0x10000 )(0)
+        memory_map = ARRAY( c_uint, 0x80000 )(0)
         QueryWorkingSet( self._process, byref(memory_map), sizeof(memory_map) )
         number_of_pages = memory_map[0]
         for page in memory_map[1:1+number_of_pages]:
@@ -337,14 +319,21 @@ class mint( object ):
 
     def getMemoryMap( self ):
         if self._is_win64:
-            return "Not supported on x64"
+            raise Exception( "Not supported on x64" )
         result = []
         one_byte = c_uint(0)
         bytes_read = c_uint(0)
         for i in range( 0l, 0x80000000l, 0x1000l ):
             read_result = ReadProcessMemory( self._process, i, byref(one_byte), 1, byref(bytes_read) )
             if 0 != read_result:
-                result.append( ("", i) )
+                yield( ("", i) )
+
+    def getMemorySnapshot( self ):
+        result = []
+        memMap = self.getMemoryMapWithQuery()
+        for addr in memMap.keys():
+            if self.isAddressWritable(addr):
+                result.append((addr, self.readMemory(addr, memMap[addr][1])))
         return result
 
     def searchInMemory( self, target, range = [], isCaseSensitive = True, searchUnicode = False ):
@@ -403,6 +392,30 @@ class mint( object ):
                     pos = data.find(target, pos+1)
 
         return result
+
+    def removeChangedMemory( self, snapshot ):
+        result = []
+        for block in snapshot:
+            addr = block[0]
+            offset = 0
+            for byte in block[1]:
+                if self.readByte(addr + offset) == ord(byte):
+                    result.append((addr + offset, byte))
+                offset += 1
+        return result
+    
+    def removeUnchangedMemory( self, snapshot ):
+        result = []
+        for block in snapshot:
+            addr = block[0]
+            offset = 0
+            for byte in block[1]:
+                newByte = self.readByte(addr + offset)
+                if newByte != ord(byte):
+                    result.append((addr + offset, chr(newByte)))
+                offset += 1
+        return result
+            
         
     def searchBinInAllMemory( self, target, isCaseSensitive = True ):
         if self._is_win64:
