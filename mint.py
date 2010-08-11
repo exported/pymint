@@ -81,35 +81,6 @@ class mint( object ):
             raise WinError()
         return result.raw
 
-    def readMemoryWithCache( self, addr, length ):
-        start_read = addr
-        block_offset = addr & 0xfff
-        block_id = addr >> 12
-        block_read_end = block_offset + length
-        if 0x1000 < block_read_end:
-            block_read_end = 0x1000
-        result = ''
-        while 0 < length:
-            cycle, block = self._cache[block_id]
-            if cycle != self._cacheCycle:
-                cycle = self._cacheCycle
-                block = self.readMemory(block_id << 12, 0x1000)
-                self._cache[block_id] = (cycle, block)
-            result += block[block_offset:block_read_end]
-            #print (result.encode('hex'))
-            bytes_read = block_read_end - block_offset
-            #print ('Bytes read: %d' % (bytes_read))
-            length -= bytes_read
-            addr += bytes_read
-            #print ('Addr: %x' % addr)
-            block_id += 1
-            block_offset = 0
-            block_read_end = length
-            #print ('Block: %x %x %x' % (block_id, block_offset, block_read_end))
-            if 0x1000 < block_read_end:
-                block_read_end = 0x1000
-        return result
-
     def readString( self, addr, isUnicode = False ):
         result = ''
         bytes_read = c_uint(0)
@@ -227,9 +198,6 @@ class mint( object ):
 ###         return False
 ###     return True
 
-    def cleanCache( self ):
-        self._mem_map = None
-
     def getMemoryMapWithQuery( self ):
         if self._is_win64:
             raise Excpetion("Not supported on x64")
@@ -326,7 +294,7 @@ class mint( object ):
         for i in range( 0l, 0x80000000l, 0x1000l ):
             read_result = ReadProcessMemory( self._process, i, byref(one_byte), 1, byref(bytes_read) )
             if 0 != read_result:
-                yield( ("", i) )
+                yield( ("", i, 0x1000) )
 
     def getMemorySnapshot( self ):
         result = []
@@ -336,59 +304,59 @@ class mint( object ):
                 result.append((addr, self.readMemory(addr, memMap[addr][1])))
         return result
 
-    def searchInMemory( self, target, range = [], isCaseSensitive = True, searchUnicode = False ):
+    def searchInMemory( self, target, searchRange=None, isCaseSensitive=True, searchUnicode=False ):
         if self._is_win64:
             return "Not supported on x64"
         result = []
 
-        if [] == range:
-            range = self.getMemoryMap()
+        if None == searchRange:
+            searchRange = self.getMemoryMap()
 
         if False == isCaseSensitive:
             target = target.lower()
         if type('') == type(target):
             last_block = ''
-            for block in range:
+            for block in searchRange:
                 try:
-                    data = last_block + self.readMemory(block[0], block[1])
+                    data = last_block + self.readMemory(block[1], block[2])
                 except WindowsError:
-                    print "Can't read from %08x" % block[0]
+                    print "Can't read from %08x" % block[1]
                     continue
                 if False == isCaseSensitive:
                     data = data.lower()
                 pos = data.find(target)
                 while -1 != pos:
-                    result.append(pos + block[0] - len(last_block))
+                    result.append(pos + block[1] - len(last_block))
                     pos = data.find(target, pos+1)
                 last_block = data[-(len(target) - 1):]
             if False == searchUnicode:
                 return results
             target = '\x00'.join(target)
             last_block = ''
-            for block in range:
+            for block in searchRange:
                 try:
-                    data = last_block + self.readMemory(block[0], block[1])
+                    data = last_block + self.readMemory(block[1], block[2])
                 except WindowsError:
-                    print "Can't read from %08x" % block[0]
+                    print "Can't read from %08x" % block[1]
                     continue
                 if False == isCaseSensitive:
                     data = data.lower()
                 pos = data.find(target)
                 while -1 != pos:
-                    result.append(pos + block[0] - len(last_block))
+                    result.append(pos + block[1] - len(last_block))
                     pos = data.find(target, pos+1)
                 last_block = data[-(len(target) - 1):]
         elif type(0) == type(target):
             target = struct.pack('<L', target)
-            for block in range:
+            for block in searchRange:
                 try:
-                    data = self.readMemory(block[0], block[1])
+                    data = self.readMemory(block[1], block[2])
                 except WindowsError:
-                    print "Can't read from %08x" % block[0]
+                    print "Can't read from %08x" % block[1]
                     continue
                 pos = data.find(target)
                 while -1 != pos:
-                    result.append(pos + block[0])
+                    result.append(pos + block[1])
                     pos = data.find(target, pos+1)
 
         return result
@@ -440,7 +408,7 @@ class mint( object ):
         pos = 0l
         while pos < 0x8000000l:
             try:
-                data = self.readMemoryWithCache( pos, len(target) )
+                data = self.readMemory( pos, len(target) )
                 if False == isCaseSensitive:
                     data = data.lower()
                 if data == target:
