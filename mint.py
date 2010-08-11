@@ -398,10 +398,14 @@ class mint( object ):
         for block in snapshot:
             addr = block[0]
             offset = 0
-            for byte in block[1]:
-                if self.readByte(addr + offset) == ord(byte):
-                    result.append((addr + offset, byte))
-                offset += 1
+            try:
+                for byte in block[1]:
+                    if self.readByte(addr + offset) == ord(byte):
+                        result.append((addr + offset, byte))
+                    offset += 1
+            except WindowsError, e:
+                continue
+
         return result
     
     def removeUnchangedMemory( self, snapshot ):
@@ -409,11 +413,14 @@ class mint( object ):
         for block in snapshot:
             addr = block[0]
             offset = 0
-            for byte in block[1]:
-                newByte = self.readByte(addr + offset)
-                if newByte != ord(byte):
-                    result.append((addr + offset, chr(newByte)))
-                offset += 1
+            try:
+                for byte in block[1]:
+                    newByte = self.readByte(addr + offset)
+                    if newByte != ord(byte):
+                        result.append((addr + offset, chr(newByte)))
+                    offset += 1
+            except WindowsError, e:
+                continue
         return result
             
         
