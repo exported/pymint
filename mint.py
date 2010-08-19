@@ -690,8 +690,12 @@ def enumProcesses():
             raise e
         if process:
             moduleName = c_buffer(0x100)
-            EnumProcessModules(process, byref(module), sizeof(module), byref(count))
-            GetModuleBaseName(process, module.value, moduleName, sizeof(moduleName))
+            try:
+                EnumProcessModules(process, byref(module), sizeof(module), byref(count))
+                GetModuleBaseName(process, module.value, moduleName, sizeof(moduleName))
+            except WindowsError, e:
+                if 299 != e.winerror:
+                    raise e
             results.append((moduleName.value.replace('\x00', ''), processesIds[i]))
     return results
                 
