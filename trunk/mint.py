@@ -31,9 +31,11 @@ class mint( object ):
         self._process = OpenProcess( 
                 win32con.PROCESS_QUERY_INFORMATION | 
                 win32con.PROCESS_VM_READ | 
-                win32con.PROCESS_VM_WRITE | 
-                win32con.PROCESS_VM_OPERATION, 
-                0, target_pid )
+                win32con.PROCESS_VM_WRITE |
+                win32con.PROCESS_VM_OPERATION |
+                win32con.PROCESS_DUP_HANDLE,
+                0,
+                target_pid )
 
     def deprotectMem( self, addr, size ):
         old_protection = c_uint(0)
@@ -642,6 +644,102 @@ class mint( object ):
                 return section
         return ('',0,0)
 
+    def getHandles( self ):
+        handleInfo = SYSTEM_HANDLE_INFORMATION()
+        bytesNeeded = c_uint(0)
+        ntstatus = NtQuerySystemInformation(
+                        win32con.SystemHandleInformation,
+                        byref(handleInfo),
+                        sizeof(handleInfo),
+                        byref(bytesNeeded))
+        if (win32con.STATUS_INFO_LENGTH_MISMATCH == ntstatus):
+            class SYSTEM_HANDLE_INFORMATION_TAG( Structure ):
+                _fields_ = [
+                        ('uCount',      c_uint),
+                        ('SystemHandle', SYSTEM_HANDLE * ((bytesNeeded.value - 4) / sizeof(SYSTEM_HANDLE))) ]
+            handleInfo = SYSTEM_HANDLE_INFORMATION_TAG()
+            ntstatus = NtQuerySystemInformation(
+                        win32con.SystemHandleInformation,
+                        byref(handleInfo),
+                        sizeof(handleInfo),
+                        byref(bytesNeeded))
+            if (win32con.STATUS_SUCCESS != ntstatus):
+                raise Exception('Querying system infromation failed')
+        if (win32con.STATUS_SUCCESS != ntstatus):
+            raise Exception("Failed to query system information %x" % ntstatus)
+        systemHandles = handleInfo.SystemHandle
+        for i in xrange(handleInfo.uCount):
+            if (self._processId != systemHandles[i].uIdProcess):
+                continue
+            objectHandle = c_int(0)
+            try:
+                needToClose = True
+                DuplicateHandle(
+                        self._process, 
+                        systemHandles[i].Handle,
+                        GetCurrentProcess(),
+                        byref(objectHandle),
+                        win32con.STANDARD_RIGHTS_REQUIRED,
+                        False,
+                        0 )
+                if (not objectHandle.value):
+                    print 'Failed to duplicate handle %x' % systemHandles[i].Handle
+                    continue
+                objectHandle = objectHandle.value
+            except WindowsError, e:
+                needToClose = False
+                if 5 == e.winerror:
+                    objectHandle = systemHandles[i].Handle
+
+            objectBasicInfo = OBJECT_BASIC_INFORMATION()
+            bytesNeeded = c_uint(0)
+            ntstatus = NtQueryObject(
+                            objectHandle,
+                            win32con.ObjectBasicInformation,
+                            byref(objectBasicInfo),
+                            sizeof(objectBasicInfo),
+                            byref(bytesNeeded) )
+            if (win32con.STATUS_SUCCESS != ntstatus):
+                print 'Failed to query besic infromation for handle %x' % systemHandles[i].Handle
+
+            if objectBasicInfo.TypeInformationLength > 0:
+                class OBJECT_TYPE_INFROMATION_TAG( Structure ):
+                    _fields_ = [
+                            ('typeInfo',    OBJECT_TYPE_INFROMATION),
+                            ('data',        c_byte * (objectBasicInfo.TypeInformationLength - sizeof(OBJECT_TYPE_INFROMATION)))]
+                objectType = OBJECT_TYPE_INFROMATION_TAG()
+                ntstatus = NtQueryObject(
+                                objectHandle,
+                                win32con.ObjectTypeInformation,
+                                byref(objectType),
+                                sizeof(objectType),
+                                byref(bytesNeeded))
+                if (win32con.STATUS_SUCCESS != ntstatus):
+                    print 'Failed to query object type'
+
+                print objectType.typeInfo.TypeName.Buffer
+
+            if objectBasicInfo.NameInformationLength > 0:
+                class OBJECT_NAME_INFORMATION_TAG( Structure ):
+                    _fields_ = [
+                            ('nameInfo',    OBJECT_NAME_INFORMATION),
+                            ('data',        c_byte * (objectBasicInfo.NameInformationLength - sizeof(OBJECT_NAME_INFORMATION)))]
+                objectName = OBJECT_NAME_INFORMATION_TAG()
+                ntstatus = NtQueryObject(
+                                objectHandle,
+                                win32con.ObjectNameInformation,
+                                byref(objectName),
+                                sizeof(objectName),
+                                byref(bytesNeeded) )
+                if (win32con.STATUS_SUCCESS != ntstatus):
+                    print 'Failed to query object name'
+
+                name = objectName.nameInfo.UnicodeStr.Buffer
+                print name
+
+            if needToClose:
+                CloseHandle(objectHandle)
+        
 def adjustDebugPrivileges():
     access_token = c_void_p(0)
     privileges = TOKEN_PRIVILEGES()

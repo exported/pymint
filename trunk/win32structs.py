@@ -7,11 +7,22 @@ class win32con( object ):
 win32con.NULL = 0
 win32con.TOKEN_QUERY					= 8
 win32con.TOKEN_ADJUST_PRIVILEGES		= 32
-win32con.PROCESS_QUERY_INFORMATION		= 1024
+win32con.PROCESS_VM_OPERATION			= 8
 win32con.PROCESS_VM_READ				= 16
 win32con.PROCESS_VM_WRITE				= 32
-win32con.PROCESS_VM_OPERATION			= 8
-win32con.PAGE_EXECUTE_READWRITE = 0x40
+win32con.PROCESS_DUP_HANDLE             = 64
+win32con.PROCESS_QUERY_INFORMATION		= 1024
+win32con.PAGE_EXECUTE_READWRITE         = 0x40
+win32con.ObjectBasicInformation         = 0
+win32con.ObjectNameInformation          = 1
+win32con.ObjectTypeInformation          = 2
+win32con.ObjectAllTypesInformation      = 3
+win32con.ObjectHandleInformation        = 4
+win32con.STATUS_SUCCESS                 = 0x00000000
+win32con.STATUS_INFO_LENGTH_MISMATCH    = 0xc0000004
+win32con.STATUS_BUFFER_OVERFLOW         = 0x80000005
+win32con.SystemHandleInformation        = 16
+win32con.STANDARD_RIGHTS_REQUIRED       = 0x000f0000
 
 from ctypes import *
 
@@ -20,6 +31,12 @@ def ErrorIfZero(handle):
         raise WinError()
     else:
         return handle
+
+def NtStatusCheck(ntStatus):
+    if ntStatus < 0 or ntStatus > 0x80000000:
+        raise WinError()
+    else:
+        return ntStatus
 
 TRUE = c_char( 	chr( int( True  ) ) )
 FALSE = c_char( chr( int( False ) ) )
@@ -190,27 +207,111 @@ class PROCESS_HEAP_ENTRY( Structure ):
 			('more_info3',		c_uint),
 			('more_info4',		c_uint) ]
 
-def DATA( data, base = 0 ):
-	result = ''
-	for i in xrange(0, len(data), 0x10):
-		line = '%08X  ' % (i + base)
-		line_data = data[i:][:0x10]
-		for t in xrange(len(line_data)):
-			if( 8 == t ):
-				line += '- %02X' % ord(line_data[t])
-			elif( 0 == (t & 1) ):
-				line += '%02X' % ord(line_data[t])
-			elif( 1 == (t & 1) ):
-				line += '%02X ' % ord(line_data[t])
-			
-		line += ' ' * (55 - len(line))
-		for t in line_data:
-			if( t == `t`[1] ):
-				line += t
-			else:
-				line += '.'
-		line += '\n'
-		result += line
-	return( result )
+class UNICODE_STRING( Structure ):
+    _fields_ = [
+            ('Length',          c_uint16),
+            ('MaximumLength',   c_uint16),
+            ('Buffer',          c_wchar_p) ]
 
+class OBJECT_BASIC_INFORMATION( Structure ):
+    _fields_ = [
+            ('Attributes',          c_uint),
+            ('DesiredAccess',       c_uint),
+            ('HandleCount',         c_uint),
+            ('ReferenceCount',      c_uint),
+            ('PagedPoolUsage',      c_uint),
+            ('NonPagedPoolUsage',   c_uint),
+            ('Reserved',            c_uint * 3),
+            ('NameInformationLength',   c_uint),
+            ('TypeInformationLength',   c_uint),
+            ('SecurityDescriptorLength',    c_uint),
+            ('CreationTime',        c_ulonglong) ]
+
+class OBJECT_NAME_INFORMATION( Structure ):
+    _fields_ = [
+            ('UnicodeStr',      UNICODE_STRING) ]
+            
+
+class GENERIC_MAPPING( Structure ):
+    _fields_ = [
+            ('GenericRead',     c_uint),
+            ('GenericWrite',    c_uint),
+            ('GenericExecute',  c_uint),
+            ('GenericAll',      c_uint)]
+
+class OBJECT_TYPE_INFROMATION( Structure ):
+    _fields_ = [
+            ('TypeName',                UNICODE_STRING),
+            ('TotalNumberOfHandles',    c_uint),
+            ('TotalNumberOfObjects',    c_uint),
+            ('Unused1',                 c_uint16*8),
+            ('HighWaterNumberOfHandles',    c_uint),
+            ('HighWaterNumberOfObjects',    c_uint),
+            ('Unused2',                 c_uint16*8),
+            ('InvalidAttributes',       c_uint),
+            ('GenericMapping',          GENERIC_MAPPING),
+            ('ValidAttributes',         c_uint),
+            ('SecurityRequired',        c_int),
+            ('MaintainHandleCount',     c_int),
+            ('MaintainTypeList',        c_uint16),
+            ('PoolType',                c_uint),
+            ('DefaultPagedPoolCharge',  c_uint),
+            ('DefaultNonPagedPoolCharge',   c_uint) ]
+
+DuplicateHandle = windll.kernel32.DuplicateHandle
+DuplicateHandle.argtypes = [
+    c_int,      #  __in   HANDLE hSourceProcessHandle,
+    c_int,      #  __in   HANDLE hSourceHandle,
+    c_int,      #  __in   HANDLE hTargetProcessHandle,
+    c_void_p,   #  __out  LPHANDLE lpTargetHandle,
+    c_uint,     #  __in   DWORD dwDesiredAccess,
+    c_int,      #  __in   BOOL bInheritHandle,
+    c_uint ]    #  __in   DWORD dwOptions
+DuplicateHandle.restype = ErrorIfZero
+
+
+NtQueryObject = windll.ntdll.NtQueryObject
+NtQueryObject.argtypes = [
+    c_void_p,   #  __in_opt   HANDLE Handle,
+    c_uint,     #  __in       OBJECT_INFORMATION_CLASS ObjectInformationClass,
+    c_void_p,   #  __out_opt  PVOID ObjectInformation,
+    c_uint,     #  __in       ULONG ObjectInformationLength,
+    c_void_p ]  #  __out_opt  PULONG ReturnLength
+NtQueryObject.restype = c_uint
+
+NtQuerySystemInformation = windll.ntdll.NtQuerySystemInformation
+NtQuerySystemInformation.argtypes = [
+    c_void_p,   #  __in       SYSTEM_INFORMATION_CLASS SystemInformationClass,
+    c_void_p,   #  __inout    PVOID SystemInformation,
+    c_uint,     #  __in       ULONG SystemInformationLength,
+    c_void_p ]  #  __out_opt  PULONG ReturnLength
+NtQuerySystemInformation.restype = c_uint
+    
+
+GetModuleFileNameEx = windll.psapi.GetModuleFileNameExA
+GetModuleFileNameEx.argtypes = [
+        c_int,      #  __in      HANDLE hProcess,
+        c_uint,     #  __in_opt  HMODULE hModule,
+        c_void_p,   #  __out     LPTSTR lpFilename,
+        c_uint ]    #  __in      DWORD nSize
+GetModuleFileNameEx.restype = ErrorIfZero
+
+class SYSTEM_HANDLE( Structure ):
+    _fields_ = [
+            ('uIdProcess',  c_uint),
+            ('ObjectType',  c_byte),
+            ('Flags',       c_byte),
+            ('Handle',      c_uint16),
+            ('object',      c_void_p),
+            ('GrantedAccess',   c_uint) ]
+
+class SYSTEM_HANDLE_INFORMATION( Structure ):
+    _fields_ = [
+            ('uCount',      c_uint),
+            ('Handle',      SYSTEM_HANDLE) ]
+
+class SYSTEM_HANDLE_INFORMATION( Structure ):
+    _fields_ = [
+            ('uCount',          c_uint),
+            ('SystemHandle',    SYSTEM_HANDLE) ]
 
