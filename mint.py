@@ -18,6 +18,7 @@ class mint( object ):
         self._EXECUTE_ATTRIBUTES    = [2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31]
         self._cache = [(0, [])] * (0x80000000 >> 12)
         self._cacheCycle = 1
+        adjustDebugPrivileges()
 
     def __del__( self ):
         self._closeProcess()
@@ -27,7 +28,6 @@ class mint( object ):
 
     def _openProcess( self, target_pid ):
         bytes_read = c_uint(0)
-        adjustDebugPrivileges()
         self._process = OpenProcess( 
                 win32con.PROCESS_QUERY_INFORMATION | 
                 win32con.PROCESS_VM_READ | 
