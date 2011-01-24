@@ -5,6 +5,8 @@ import struct
 
 from pefile import *
 
+PAGE_SIZE = 0x1000
+
 class mint( object ):
     def __init__( self, target_process_id ):
         self._processId = target_process_id
@@ -205,7 +207,7 @@ class mint( object ):
         result = {}
 
         # Enum modules sections and sizes
-        modules = ARRAY( c_void_p, 0x1000 )(0)
+        modules = ARRAY( c_void_p, PAGE_SIZE )(0)
         bytes_written = c_uint(0)
         EnumProcessModules( self._process, byref(modules), sizeof(modules), byref(bytes_written) )
         num_modules = bytes_written.value / sizeof(c_void_p(0))
@@ -221,16 +223,16 @@ class mint( object ):
                 raise Exception("Module not page aligned")
             result[module_base] = (module_cut_name, module_info.SizeOfImage, 0)
             # Get the sections
-            module_bin = self.readMemory(module_base, 0x1000) #module_info.SizeOfImage)
+            module_bin = self.readMemory(module_base, PAGE_SIZE) #module_info.SizeOfImage)
             parsed_pe = PE(data=module_bin, fast_load=True)
             for section in parsed_pe.sections:
                 section_addr = (section.VirtualAddress & 0xfffff000l) + module_base
                 section_size = section.SizeOfRawData
                 # Algin to end of page
                 if 0 == section_size:
-                    section_size = 0x1000
+                    section_size = PAGE_SIZE
                 elif (section_size & 0xfff) != 0:
-                    section_size += 0x1000 - (section_size & 0xfff)
+                    section_size += PAGE_SIZE - (section_size & 0xfff)
                 # Append to list
                 result[section_addr] = (module_cut_name + section.Name.replace('\x00', ''), section_size, 1)
             
@@ -262,7 +264,7 @@ class mint( object ):
             if True == page_found:
                 result[addr] = (module_name, module_size, attrib)
             else:
-                result[addr] = ("", 0x1000, attrib)
+                result[addr] = ("", PAGE_SIZE, attrib)
 
         # Concat blocks
         keys = result.keys()
@@ -292,10 +294,10 @@ class mint( object ):
         result = []
         one_byte = c_uint(0)
         bytes_read = c_uint(0)
-        for i in range( 0l, 0x80000000l, 0x1000l ):
+        for i in range( 0l, 0x80000000l, PAGE_SIZE ):
             read_result = ReadProcessMemory( self._process, i, byref(one_byte), 1, byref(bytes_read) )
             if 0 != read_result:
-                yield( ("", i, 0x1000) )
+                yield( ("", i, PAGE_SIZE) )
 
     def getMemorySnapshot( self ):
         result = []
@@ -331,7 +333,7 @@ class mint( object ):
                     pos = data.find(target, pos+1)
                 last_block = data[-(len(target) - 1):]
             if False == searchUnicode:
-                return results
+                return result
             target = '\x00'.join(target)
             last_block = ''
             for block in searchRange:
@@ -416,7 +418,7 @@ class mint( object ):
                 if data == target:
                     results.append(pos)
             except WindowsError:
-                pos += 0x1000 - (pos % 0x1000)
+                pos += PAGE_SIZE - (pos % PAGE_SIZE)
                 continue
             pos += 1
 
