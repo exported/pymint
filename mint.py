@@ -17,7 +17,6 @@ class mint( object ):
         self._WRITE_ATTRIBUTES      = [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]
         self._EXECUTE_ATTRIBUTES    = [2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31]
         self._cache = [(0, [])] * (0x80000000 >> 12)
-        self._cacheCycle = 1
         adjustDebugPrivileges()
 
     def __del__( self ):
@@ -398,7 +397,6 @@ class mint( object ):
         if self._is_win64:
             return "Not supported on x64"
 
-        self._cacheCycle += 1
         results = []
 
         if type(0) == type(target):
@@ -409,6 +407,8 @@ class mint( object ):
 
         pos = 0l
         while pos < 0x8000000l:
+            if 0 == (pos & 0xffffff):
+                print '.',
             try:
                 data = self.readMemory( pos, len(target) )
                 if False == isCaseSensitive:
@@ -416,7 +416,6 @@ class mint( object ):
                 if data == target:
                     results.append(pos)
             except WindowsError:
-                pos += 1
                 pos += 0x1000 - (pos % 0x1000)
                 continue
             pos += 1
