@@ -9,6 +9,7 @@ PAGE_SIZE = 0x1000
 
 class mint( object ):
     def __init__( self, target_process_id ):
+        adjustDebugPrivileges()
         self._processId = target_process_id
         self._openProcess( target_process_id )
         temp_void_p = c_void_p(1)
@@ -19,7 +20,6 @@ class mint( object ):
         self._WRITE_ATTRIBUTES      = [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]
         self._EXECUTE_ATTRIBUTES    = [2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31]
         self._cache = [(0, [])] * (0x80000000 >> 12)
-        adjustDebugPrivileges()
 
     def __del__( self ):
         self._closeProcess()
