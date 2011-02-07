@@ -235,72 +235,46 @@ def dotted(ip):
 
 
 try:
-    isTkFound = True
-    from Tkinter import *
-    import thread
-    import time
+    from PyQt4 import QtGui
+    from PyQt4 import QtCore
+    from hexView import Ui_QHex
+    HAS_GUI_SUPPORT = True
 except ImportError, e:
-    # No Tkinter module
-    isTkFound = False
+    # No Qt
+    HAS_GUI_SUPPORT = False
 
-if isTkFound:
-    class DisplayContext( object ):
-        def __init__(self, data, addr = 0, isNoBase = True):
+if HAS_GUI_SUPPORT:
+    class DisplayContext( QtGui.QDialog ):
+        def __init__(self, data, addr=0, isNoBase=True):
+            BYTES_PER_ROW = 0x10
+            ADDRESS_COL = 0
+            HEX_COL = 1
+            ASCII_COL = HEX_COL + BYTES_PER_ROW
             self.data = data
             self.addr = addr
             length = len(data)
             self.length = length
             self.isNoBase = isNoBase
             self.colors = {}
-            root = Tk()
-            root.title("Memory @ 0x%08x length: 0x%x" % (addr, length))
-            scrollbar = Scrollbar(root)
-            address = Text(root, yscrollcommand=scrollbar.set)
-            hexBytes = Text(root, yscrollcommand=scrollbar.set)
-            asciiBytes = Text(root, yscrollcommand=scrollbar.set)
-            address.config(width=9, height = 20)
-            hexBytes.config(width=40, height = 20)
-            asciiBytes.config(width=16, height = 20)
-            scrollbar.pack(side=RIGHT, fill=Y)
-            textBoxes = [address, hexBytes, asciiBytes]
-            for textBox in textBoxes:
-                textBox.config(font=('Terminal', 10, 'normal'))
-                textBox.pack(expand=YES, side=LEFT, fill=Y)
-            def scrollAllThree( cmd,offset ):
-                    address.yview(cmd, offset)
-                    hexBytes.yview(cmd, offset)
-                    asciiBytes.yview(cmd, offset)
-            scrollbar.config(command=scrollAllThree)
-            root.resizable(NO, YES)
-            address.focus_set()
-            # Create thread to handle the window's events
-            thread.start_new_thread(mainloop, ())
-            time.sleep(0.2)
+            #root.title("Memory @ 0x%08x length: 0x%x" % (addr, length))
             # Add the data in
-            for pos in xrange(0, length, 0x10):
-                address.insert(END, '%08X' % (addr + pos))
-                for i in xrange(0x10):
+            for pos in xrange(0, length, BYTES_PER_ROW):
+                rowNumber = pos / BYTES_PER_ROW
+                self.insertRow(rowNumber)
+                self.item(rowNumber, ADDRESS).setText('%8X' % (addr + pos))
+                for i in xrange(BYTES_PER_ROW, 4):
+                    dword = data[pos+i:pos+i+4]
+                    if len(dword) == 4:
+                        dword = unpack('=L', dword)
+                    else:
+                        dword = unpack('=L', dword + ('\x00' * (4 - len(dword))))
+                    self.item(rowNumber, HEX_COL + (i / 4)).setText('%8x' % dword)
+                for i in xrange(BYTES_PER_ROW):
                     if (pos + i) < length:
-                        if 1 == (i % 2):
-                            hexBytes.insert(END, "%02x " % ord(data[pos+i]))
-                        else:
-                            hexBytes.insert(END, "%02x" % ord(data[pos+i]))
                         if `data[pos+i]`[1] == data[pos+i]:
-                            asciiBytes.insert(END, data[pos+i])
+                            self.item(rowNumber, ASCII_COL).setText(data[pos+i])
                         else:
-                            asciiBytes.insert(END, '.')
-                address.insert(END, '\n')
-                hexBytes.insert(END, '\n')
-                asciiBytes.insert(END, '\n')
-            # Don't let the user change the text
-            for textBox in textBoxes:
-                textBox.config(state = DISABLED)
-            # Save everything to context
-            self.root = root
-            self.address = address
-            self.hexBytes = hexBytes
-            self.asciiBytes = asciiBytes
-            self.scrollbar = scrollbar
+                            self.item(rowNumber, ASCII_COL).setText('.')
         def setByteColor(self, addr, length, color):
             if length < 1:
                 return
