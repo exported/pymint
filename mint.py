@@ -23,8 +23,9 @@
 from win32structs import *
 import sys
 import struct
-
 from pefile import *
+
+import gui
 
 PAGE_SIZE = 0x1000
 
