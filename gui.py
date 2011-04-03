@@ -6,6 +6,46 @@ import struct
 import time
 
 
+class ColorLegendItem(QtGui.QWidget):
+    """
+    ColorLegendItem class
+
+    Displays a single color legend item (a colored square with a label to the right of it)
+    """
+
+    COLOR_BOX_WIDTH = 40
+    COLOR_BOX_HEIGHT = 20
+
+    LABEL_FONT = "Arial"
+    LABEL_FONT_SIZE = 10
+
+    def __init__(self, text, color, parent = None):
+        """
+        text - The label text
+        color - The label/square color
+        """
+        QtGui.QWidget.__init__(self, parent)
+
+        self._text = text
+        self._color = color
+
+        self.display_font = QtGui.QFont(ColorLegendItem.LABEL_FONT, ColorLegendItem.LABEL_FONT_SIZE)
+
+        self.color_box = QtGui.QWidget(self)
+        self.color_box.setStyleSheet("background-color: " + color + ";");
+        self.color_box.resize(ColorLegendItem.COLOR_BOX_WIDTH, ColorLegendItem.COLOR_BOX_HEIGHT)
+
+        self.label = QtGui.QLabel(text, self)
+        text_height = self._calcStringHeight()
+        self.label.move(ColorLegendItem.COLOR_BOX_WIDTH + 10,
+                (ColorLegendItem.COLOR_BOX_HEIGHT - text_height) / 2)
+
+    def _calcStringHeight(self):
+        # Assume fixed-size font
+        return QtGui.QFontMetrics(self.display_font).height()
+
+
+
 class MintGui(QtGui.QWidget):
     """
     MintGui class
@@ -38,7 +78,7 @@ class MintGui(QtGui.QWidget):
             data - Binary blob of data to display
             start_address - The virtual address where the data starts
             item_size - 1, 2 or 4 bytes per item (can be set using setItemSize method)
-            color_ranges - A list of color ranges, where each color range is (start_addr, end_addr, color) - (can be set using setColorsRanges method)
+            color_ranges - A list of color ranges, where each color range is (start_addr, size, color) - (can be set using setColorsRanges method)
         """
 
         if (QtGui.QApplication.instance() is None):
@@ -111,7 +151,9 @@ class MintGui(QtGui.QWidget):
 
         self.scrollbar = QtGui.QScrollBar(Qt.Vertical, self)
         self.scrollbar.sliderChange = self._onSliderChange
-        
+
+
+       
         #
         # Horizontal Layout
         #
@@ -123,9 +165,29 @@ class MintGui(QtGui.QWidget):
         self.horizontal_layout.addWidget(self.text_display, 1)
         self.horizontal_layout.addWidget(self.scrollbar, 1)
 
-        self.setLayout(self.horizontal_layout)
 
         self._updateContentDisplayRatio()
+
+
+        #
+        # Color Legend
+        #
+
+
+        self.color_legend = ColorLegendItem('bobo', 'red')
+        self.color_legend.setMinimumHeight(50)
+        self.color_legend.setMaximumHeight(50)
+
+        #
+        # Vertical Layout
+        #
+
+
+        self.vertical_layout = QtGui.QVBoxLayout()
+        self.vertical_layout.addLayout(self.horizontal_layout, 1)
+        self.vertical_layout.addWidget(self.color_legend, 1)
+ 
+        self.setLayout(self.vertical_layout)
 
         #
         # Window size and title
@@ -159,7 +221,7 @@ class MintGui(QtGui.QWidget):
         # Refresh the scroll bar
         row_height = QtGui.QFontMetrics(self.display_font).lineSpacing()
         total_rows = len(self._data) / (self._items_per_row * self._item_size)
-        window_height = self.height()
+        window_height = self.horizontal_layout.geometry().height()
         self._visible_rows = (window_height / row_height) - 3
 
         old_value = self.scrollbar.value() * 1.0
@@ -192,10 +254,6 @@ class MintGui(QtGui.QWidget):
         elif (changeType == QtGui.QSlider.SliderValueChange):
             self._refreshContent()
 
-        if (self.scrollbar.value() >= 10):
-            new_data = 'bobo' * 1000
-            self.setData(new_data, 0x30000)
-
     def _refreshContent(self):
         index = self.scrollbar.value()
         end_index = index + self._visible_rows
@@ -225,8 +283,12 @@ class MintGui(QtGui.QWidget):
         """
         Sets the color ranges of the data to display.
 
-        color_ranges - A list of color ranges, where each color range is (start_addr, end_addr, color)
+        color_ranges - A list of color ranges, where each color range is (start_addr, size, color)
         """
+
+        if (type(color_ranges) == tuple):
+            color_ranges = [color_ranges] # Single item - turn into list
+
         self._color_ranges = color_ranges
 
         # Convert color ranges into absolute values
@@ -241,6 +303,30 @@ class MintGui(QtGui.QWidget):
             )
 
         self._refreshContent()
+
+    def addColorRanges(self, color_ranges):
+        """
+        Adds color ranges to existing ones (one or more)
+        """
+        if (type(color_ranges) == tuple):
+            color_ranges = [color_ranges] # Single item - turn into list
+
+        self._color_ranges += color_ranges
+
+        # Convert color ranges into absolute values
+        self._getAbsoluteColorAddresses()
+
+        # Refresh content
+        self._formatData(
+            self._data,
+            self._start_address,
+            self._item_size,
+            self._items_per_row
+            )
+
+        self._refreshContent()
+
+
 
 
     def getColorsRanges(self):
@@ -464,8 +550,8 @@ class MintGui(QtGui.QWidget):
  
     def _getAbsoluteColorAddresses(self):
         self._absolute_color_addresses = {}
-        for (start_addr, end_addr, color) in self._color_ranges:
-            for addr in xrange(start_addr, end_addr + 1):
+        for (start_addr, size, color) in self._color_ranges:
+            for addr in xrange(start_addr, start_addr + size):
                 self._absolute_color_addresses[addr] = color
 
 
@@ -493,7 +579,7 @@ if (__name__ == '__main__'):
     data = [chr(random.randrange(0,255)) for i in xrange(1200)]
     data = ''.join(data)
 
-    gui = MintGui(data, 0x4030E0, 4, ([0x4030E4, 0x4030E8, 'red'], [0x4032D2, 0x4032D6, 'blue']))
+    gui = MintGui(data, 0x4030E0, 4, ([0x4030E4, 8, 'red'], [0x4032D2, 6, 'blue']))
     gui.show()
     #gui.setItemSize(2)
     #gui.setColorsRanges(([0x4030E4, 0x4030E8, 'red'], [0x4032D2, 0x4032D6, 'blue']))
