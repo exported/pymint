@@ -1,5 +1,5 @@
 from PyQt4 import QtGui
-from PyQt4.QtCore import Qt
+from PyQt4.QtCore import Qt, SIGNAL
 from PyQt4 import QtCore
 import sys
 import struct
@@ -45,6 +45,56 @@ class ColorLegendItem(QtGui.QWidget):
         return QtGui.QFontMetrics(self.display_font).height()
 
 
+class ColorLegend(QtGui.QWidget):
+    """
+    ColorLegend class
+
+    Displays a color legend for the items being colored in the hex display
+    """
+
+    def __init__(self, color_ranges, parent = None):
+        """
+        color_ranges - The color ranges (start_addr, size, color, name)
+        """
+        QtGui.QWidget.__init__(self, parent)
+
+        self._color_ranges = color_ranges
+
+        #self.display_font = QtGui.QFont(ColorLegendItem.LABEL_FONT, ColorLegendItem.LABEL_FONT_SIZE)
+
+        self.grid_layout = QtGui.QGridLayout()
+
+        self._loadLegendItems()
+
+        self.setLayout(self.grid_layout)
+
+    #
+    # Helper methods
+    #
+
+
+    def _loadLegendItems(self):
+        row = 0
+        column = 0
+
+        for (start_addr, size, color, name) in self._color_ranges:
+            if (name is None):
+                continue
+
+            color_legend_item = ColorLegendItem(name, color)
+            self.grid_layout.addWidget(color_legend_item, row, column)
+
+            column = (column + 1) % 3
+            if (column == 0):
+                row += 1
+
+
+    def _calcStringHeight(self):
+        # Assume fixed-size font
+        return QtGui.QFontMetrics(self.display_font).height()
+
+
+
 
 class MintGui(QtGui.QWidget):
     """
@@ -70,10 +120,13 @@ class MintGui(QtGui.QWidget):
     # Number of characters to display for text view
     TEXT_DISPLAY_WIDTH = len(TEXT_DISPLAY_HEADER) + 2
 
+    DISPLAY_FONT = 'Courier New'
+    DISPLAY_FONT_SIZE = 10
+
     __app_instance = None
 
 
-    def __init__(self, data, start_address = 0x0, item_size = 4, color_ranges = [], parent = None):
+    def __init__(self, data, start_address = 0x0, item_size = 4, color_ranges = [], always_on_top = False, parent = None):
         """
             data - Binary blob of data to display
             start_address - The virtual address where the data starts
@@ -104,11 +157,13 @@ class MintGui(QtGui.QWidget):
 
         self._window_title_set = False
 
+        self.setAlwaysOnTop(always_on_top)
+
         #
         # Initialize the components of the window
         #
 
-        self.display_font = QtGui.QFont("Courier New", 10)
+        self.display_font = QtGui.QFont(MintGui.DISPLAY_FONT, MintGui.DISPLAY_FONT_SIZE)
 
 
         #
@@ -122,6 +177,7 @@ class MintGui(QtGui.QWidget):
         self.address_display.setReadOnly(True)
         self.address_display.setCurrentFont(self.display_font)
         self.address_display.setWordWrapMode(False)
+        self.address_display.keyPressEvent = self._onKeyPress
 
 
         #
@@ -133,6 +189,7 @@ class MintGui(QtGui.QWidget):
         self.hex_display.setCurrentFont(self.display_font)
         self.hex_display.setMinimumWidth(self._calcStringWidth(MintGui.HEX_DISPLAY_WIDTH + 2))
         self.hex_display.setWordWrapMode(False)
+        self.hex_display.keyPressEvent = self._onKeyPress
 
         #
         # Text Display
@@ -143,6 +200,7 @@ class MintGui(QtGui.QWidget):
         self.text_display.setCurrentFont(self.display_font)
         self.text_display.setMinimumWidth(self._calcStringWidth(MintGui.TEXT_DISPLAY_WIDTH + 1))
         self.text_display.setWordWrapMode(False)
+        self.text_display.keyPressEvent = self._onKeyPress
 
 
         #
@@ -174,9 +232,8 @@ class MintGui(QtGui.QWidget):
         #
 
 
-        self.color_legend = ColorLegendItem('bobo', 'red')
+        self.color_legend = ColorLegend(self._color_ranges)
         self.color_legend.setMinimumHeight(50)
-        self.color_legend.setMaximumHeight(50)
 
         #
         # Vertical Layout
@@ -184,8 +241,16 @@ class MintGui(QtGui.QWidget):
 
 
         self.vertical_layout = QtGui.QVBoxLayout()
-        self.vertical_layout.addLayout(self.horizontal_layout, 1)
-        self.vertical_layout.addWidget(self.color_legend, 1)
+        self.vertical_splitter = QtGui.QSplitter()
+
+        wid = QtGui.QWidget()
+        wid.setLayout(self.horizontal_layout)
+        self.vertical_splitter.addWidget(wid)
+        self.vertical_splitter.addWidget(self.color_legend)
+        self.vertical_splitter.setOrientation(Qt.Vertical)
+        self.connect(self.vertical_splitter, SIGNAL("splitterMoved(int, int)"), self.resizeEvent)
+
+        self.vertical_layout.addWidget(self.vertical_splitter)
  
         self.setLayout(self.vertical_layout)
 
@@ -194,16 +259,18 @@ class MintGui(QtGui.QWidget):
         #
 
         self.setGeometry(300, 300,
-                self.hex_display.minimumWidth() + self.address_display.minimumWidth() + self.text_display.minimumWidth() + 50,
-                150)
+                (self.hex_display.minimumWidth() + self.address_display.minimumWidth() + self.text_display.minimumWidth() + 50) * 2,
+                250)
 
         self.setWindowTitle('PyMint: %X - %X' % (start_address, start_address + len(data)))
 
-
+        self.resize(self.hex_display.minimumWidth() + self.address_display.minimumWidth() + self.text_display.minimumWidth() + 150,
+                300)
 
 
         # Refresh the content of the window
         self.resizeEvent(None)
+
 
 
     #
@@ -247,6 +314,23 @@ class MintGui(QtGui.QWidget):
 
         self._refreshContent()
 
+
+    def _onKeyPress(self, event):
+        if (event.key() not in [Qt.Key_PageDown, Qt.Key_PageUp]):
+            return
+
+        old_val = self.scrollbar.value()
+
+        if (event.key() == Qt.Key_PageDown):
+            new_val = old_val + self._visible_rows
+        elif (event.key() == Qt.Key_PageUp):
+            new_val = old_val - self._visible_rows
+
+        if (new_val < 0): new_val = 0
+        if (new_val >= len(self._hex_display)): new_val = len(self._hex_display) - 1
+
+        self.scrollbar.setValue(new_val)
+
     def _onSliderChange(self, changeType):
         self.scrollbar.update()
         if (changeType == QtGui.QSlider.SliderRangeChange):
@@ -277,6 +361,28 @@ class MintGui(QtGui.QWidget):
     #
     # Setters/Getters
     #
+
+
+    def setAlwaysOnTop(self, val):
+        """
+        Sets whether or not the window should always be on top
+        """
+        self._always_on_top = val
+
+        flags = self.windowFlags();
+
+        if (val):
+            self.setWindowFlags(flags | Qt.CustomizeWindowHint | Qt.WindowStaysOnTopHint)
+        else:
+            self.setWindowFlags(flags ^ (Qt.CustomizeWindowHint | Qt.WindowStaysOnTopHint))
+
+    def getAlwaysOnTop(self):
+        """
+        Returns whether or not the window should always be on top
+        """
+        returnself._always_on_top
+
+
 
 
     def setColorsRanges(self, color_ranges):
@@ -550,7 +656,7 @@ class MintGui(QtGui.QWidget):
  
     def _getAbsoluteColorAddresses(self):
         self._absolute_color_addresses = {}
-        for (start_addr, size, color) in self._color_ranges:
+        for (start_addr, size, color, name) in self._color_ranges:
             for addr in xrange(start_addr, start_addr + size):
                 self._absolute_color_addresses[addr] = color
 
@@ -579,8 +685,10 @@ if (__name__ == '__main__'):
     data = [chr(random.randrange(0,255)) for i in xrange(1200)]
     data = ''.join(data)
 
-    gui = MintGui(data, 0x4030E0, 4, ([0x4030E4, 8, 'red'], [0x4032D2, 6, 'blue']))
+    gui = MintGui(data, 0x4030E0, 4,
+            [(0x4030E4, 8, 'red', 'struct start'),
+                (0x4032D2, 6, 'blue', 'item 1'),
+                (0x4032A2, 16, 'green', 'item 2')
+                ], True)
     gui.show()
-    #gui.setItemSize(2)
-    #gui.setColorsRanges(([0x4030E4, 0x4030E8, 'red'], [0x4032D2, 0x4032D6, 'blue']))
 
