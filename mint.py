@@ -832,11 +832,11 @@ def findProcessId(name):
 from utile import *
 try:
     from gui import *
-    IS_GUID_FOUND = True
+    IS_GUI_FOUND = True
 except ImportError, e:
     print("No GUI support")
-    IS_GUID_FOUND = False
-if IS_GUID_FOUND:
+    IS_GUI_FOUND = False
+if IS_GUI_FOUND:
     def windowDisplay(self, address, length=0x1000, isNoBase=True, size=4):
         if isNoBase:
             newWindow = MintGui(self.readMemory(address, length), start_address=0, item_size=size)
