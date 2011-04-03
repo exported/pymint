@@ -62,6 +62,8 @@ class MintGui(QtGui.QWidget):
 
         self._items_per_row = 0
 
+        self._window_title_set = False
+
         #
         # Initialize the components of the window
         #
@@ -190,6 +192,9 @@ class MintGui(QtGui.QWidget):
         elif (changeType == QtGui.QSlider.SliderValueChange):
             self._refreshContent()
 
+        if (self.scrollbar.value() >= 10):
+            new_data = 'bobo' * 1000
+            self.setData(new_data, 0x30000)
 
     def _refreshContent(self):
         index = self.scrollbar.value()
@@ -239,6 +244,10 @@ class MintGui(QtGui.QWidget):
 
 
     def getColorsRanges(self):
+        """
+        Gets the list of color ranges
+        """
+
         return self._color_ranges
 
 
@@ -252,6 +261,8 @@ class MintGui(QtGui.QWidget):
 
         self._item_size = new_size
 
+        self.scrollbar.setValue(0)
+
         # Refresh content
         self.resizeEvent(None)
 
@@ -259,7 +270,45 @@ class MintGui(QtGui.QWidget):
 
 
     def getItemSize(self):
+        """
+        Gets item size (1, 2 or 4 bytes)
+        """
+
         return self._item_size
+
+
+    def setData(self, data, start_address):
+        """
+        Sets the data and start address to display
+        """
+
+        self._data = data
+        self._start_address = start_address
+        self._color_ranges = []
+        self._getAbsoluteColorAddresses()
+
+        self._items_per_row = 0
+        self.resizeEvent(None)
+
+        if (self._window_title_set == False):
+            # Refresh the window title only if it hasn't been set externally
+            self.setWindowTitle('PyMint: %X - %X' % (start_address, start_address + len(data)))
+
+
+    def setTitle(self, title):
+        """
+        Sets the window title
+        """
+
+        self.setWindowTitle(title)
+        self._window_title_set = True
+
+    def getTitle(self):
+        """
+        Gets the window title
+        """
+
+        return self.windowTitle()
 
 
     #
