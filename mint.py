@@ -837,8 +837,8 @@ except ImportError, e:
     print("No GUI support")
     IS_GUI_FOUND = False
 if IS_GUI_FOUND:
-    def windowDisplay(self, address, length=0x1000, isNoBase=True, size=4):
-        if isNoBase:
+    def windowDisplay(self, address, length=0x1000, showOffsets=False, size=4):
+        if showOffsets:
             newWindow = MintGui(self.readMemory(address, length), start_address=0, item_size=size)
         else:
             newWindow = MintGui(self.readMemory(address, length), start_address=address, item_size=size)
