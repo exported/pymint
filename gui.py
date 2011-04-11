@@ -296,11 +296,16 @@ class MintGui(QtGui.QWidget):
         self.resizeEvent(None)
 
 
-
     #
     # Events
     #
 
+
+    def show(self):
+        QtGui.QWidget.show(self)
+
+        # Call resize once more in order for the splitter to resize properly
+        self.resizeEvent(None)
 
     def resizeEvent(self, ev):
         item_width = self._calcStringWidth((self._item_size * 2) + 1)
@@ -715,4 +720,5 @@ if (__name__ == '__main__'):
                 (0x4032A2, 16, 'green', 'item 2')
                 ], True)
     gui.show()
+
 
