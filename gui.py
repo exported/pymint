@@ -1,10 +1,13 @@
 #
 #   Gui.py
 #
+#   GUI for PyMint
+#
 #   pyMint - Remote process memory inspection python module
 #   https://code.google.com/p/pymint/
 #   Nativ.Assaf+pyMint@gmail.com
-#   Copyright (C) 2011  Assaf Nativ
+#   budowski@gmail.com
+#   Copyright (C) 2011  Assaf Nativ, Yaron Budowski
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,6 +31,7 @@ from PyQt4 import QtCore
 import sys
 import struct
 import time
+import copy
 
 
 class ColorLegendItem(QtGui.QWidget):
@@ -82,22 +86,81 @@ class ColorLegend(QtGui.QWidget):
         """
         QtGui.QWidget.__init__(self, parent)
 
-        self._color_ranges = color_ranges
-
-        #self.display_font = QtGui.QFont(ColorLegendItem.LABEL_FONT, ColorLegendItem.LABEL_FONT_SIZE)
+        self._color_ranges = copy.deepcopy(color_ranges)
 
         self.grid_layout = QtGui.QGridLayout()
 
-        self._loadLegendItems()
+        self._last_items_per_row = self._calcItemsPerRow()
+        self._loadLegendItems(self._last_items_per_row)
 
         self.setLayout(self.grid_layout)
+
+
+    def addColorRanges(self, color_ranges):
+        """
+        Adds color ranges to existing ones (one or more)
+        """
+        if (type(color_ranges) == tuple):
+            color_ranges = [color_ranges] # Single item - turn into list
+
+        self._color_ranges += color_ranges
+
+        # Refresh content
+        self._removeItemsFromLegend()
+        self._loadLegendItems(self._last_items_per_row)
+
+ 
+
+    #
+    # Events
+    #
+
+
+    def resizeEvent(self, ev):
+        items_per_row = self._calcItemsPerRow()
+        if (items_per_row == self._last_items_per_row):
+            return
+
+        self._last_items_per_row = items_per_row
+
+        self._removeItemsFromLegend()
+
+        # Re-add them
+        self._loadLegendItems(items_per_row)
 
     #
     # Helper methods
     #
 
 
-    def _loadLegendItems(self):
+    def _removeItemsFromLegend(self):
+        # Clear previous items first
+        column_count = self.grid_layout.columnCount()
+        row_count = self.grid_layout.rowCount()
+
+        for row in xrange(row_count):
+            for column in xrange(column_count):
+                item = self.grid_layout.itemAtPosition(row, column)
+                if (not item):
+                    continue
+
+                item.widget().deleteLater()
+
+        self.grid_layout.update()
+
+
+
+    def _calcItemsPerRow(self):
+        legend_width = self.width()
+        legend_height = self.height()
+
+        item_width = 150
+        item_height = 15
+
+        return (legend_width / item_width)
+
+
+    def _loadLegendItems(self, items_per_row):
         row = 0
         column = 0
 
@@ -108,7 +171,7 @@ class ColorLegend(QtGui.QWidget):
             color_legend_item = ColorLegendItem(name, color)
             self.grid_layout.addWidget(color_legend_item, row, column)
 
-            column = (column + 1) % 3
+            column = (column + 1) % items_per_row
             if (column == 0):
                 row += 1
 
@@ -155,7 +218,7 @@ class MintGui(QtGui.QWidget):
             data - Binary blob of data to display
             start_address - The virtual address where the data starts
             item_size - 1, 2 or 4 bytes per item (can be set using setItemSize method)
-            color_ranges - A list of color ranges, where each color range is (start_addr, size, color) - (can be set using setColorsRanges method)
+            color_ranges - A list of color ranges, where each color range is (start_addr, size, color, name) - (can be set using setColorsRanges method)
         """
 
         if (QtGui.QApplication.instance() is None):
@@ -418,7 +481,7 @@ class MintGui(QtGui.QWidget):
         """
         Sets the color ranges of the data to display.
 
-        color_ranges - A list of color ranges, where each color range is (start_addr, size, color)
+        color_ranges - A list of color ranges, where each color range is (start_addr, size, color, name)
         """
 
         if (type(color_ranges) == tuple):
@@ -443,6 +506,9 @@ class MintGui(QtGui.QWidget):
         """
         Adds color ranges to existing ones (one or more)
         """
+
+        self.color_legend.addColorRanges(color_ranges)
+
         if (type(color_ranges) == tuple):
             color_ranges = [color_ranges] # Single item - turn into list
 
@@ -717,7 +783,8 @@ if (__name__ == '__main__'):
     gui = MintGui(data, 0x4030E0, 4,
             [(0x4030E4, 8, 'red', 'struct start'),
                 (0x4032D2, 6, 'blue', 'item 1'),
-                (0x4032A2, 16, 'green', 'item 2')
+                (0x4032A2, 16, 'green', 'item 2'),
+                (0x4031A2, 16, 'gray', 'item 4')
                 ], True)
     gui.show()
 
