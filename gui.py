@@ -34,6 +34,314 @@ import time
 import copy
 
 
+
+class MemoryVisualizer(QtGui.QWidget):
+    """
+    MemoryVisualizer class
+
+    A widget that displays bytes as colored pixels
+    """
+
+    def __init__(self, data, pixel_width, pixel_height, color_map, background_color, items_per_row, parent = None):
+        """
+        data - the data to display
+        pixel_width, pixel_height - dimensions of each pixel
+        color_map - a dictionary converting from byte value to color
+        background_color - the default color if not data is displayed
+        items_per_row - number of pixels per row
+        """
+
+        QtGui.QWidget.__init__(self, parent)
+
+        self._data = data
+
+        self._pixel_width = pixel_width
+        self._pixel_height = pixel_height
+
+        self._color_map = color_map
+
+        self._background_color = background_color
+
+        self._items_per_row = items_per_row
+
+        self._start_offset = 0
+
+        self._data = data
+
+
+        # Image control
+
+        self._calculateRowCount()
+        self.image = QtGui.QImage(pixel_width * items_per_row, pixel_height * self._row_count, QtGui.QImage.Format_RGB32)
+
+        self.image_label = QtGui.QLabel()
+
+        pm = QtGui.QPixmap(self.image)
+        self.image_label.setPixmap(pm)
+
+
+        self.scroll_area = QtGui.QScrollArea()
+        self.scroll_area.setWidget(self.image_label)
+
+        self.horizontal_layout = QtGui.QHBoxLayout()
+        self.horizontal_layout.addWidget(self.scroll_area)
+
+        self.setLayout(self.horizontal_layout)
+
+        self._colorMap()
+
+
+    #
+    # Accessor methods
+    #
+
+
+    def setPixelDimensions(self, width, height):
+        self._pixel_width = width
+        self._pixel_height = height 
+
+        # Refresh map
+        self._colorMap()
+
+    def setStartOffset(self, offset):
+        self._start_offset = offset
+
+        # Refresh map
+        self._colorMap()
+
+    def setItemsPerRow(self, items_per_row):
+        self._items_per_row = items_per_row
+
+        # Refresh map
+        self._colorMap()
+
+
+
+
+    #
+    # Helper methods
+    #
+
+
+    def _colorMap(self):
+        i = 0
+        col = 0
+        row = 0
+
+        self._calculateRowCount()
+
+        del self.image
+        self.image = QtGui.QImage(self._pixel_width * self._items_per_row, self._pixel_height * self._row_count, QtGui.QImage.Format_RGB32)
+
+        # Start by drawing any offset pixels, if specified
+        while ((col + (row * self._items_per_row)) < self._start_offset):
+            self._colorPixel(
+                col * self._pixel_width,
+                row * self._pixel_height,
+                self._background_color)
+
+            col += 1
+
+            if (col == 0):
+                row += 1
+
+
+        while (row < self._row_count):
+
+            if (i >= len(self._data)):
+                # No data - use the default background color
+                color = self._background_color
+            else:
+                color = self._color_map[ord(self._data[i])]
+
+            self._colorPixel(
+                col * self._pixel_width,
+                row * self._pixel_height,
+                color)
+                
+
+            col = (col + 1) % self._items_per_row
+
+            if (col == 0):
+                row += 1
+
+            i += 1
+
+        # Repaint and resize the color map
+        pm = QtGui.QPixmap(self.image)
+        self.image_label.setPixmap(pm)
+
+        self.image_label.resize(self.image.width(), self.image.height())
+ 
+    def _colorPixel(self, x, y, color):
+        clr = QtGui.QColor(color)
+        painter = QtGui.QPainter(self.image)
+        painter.fillRect(x, y, self._pixel_width, self._pixel_height, clr)
+
+        return
+        # OLD WAY
+        for current_x in xrange(x, x + self._pixel_width):
+            for current_y in xrange(y, y + self._pixel_height):
+                self.image.setPixel(current_x, current_y, color)
+
+    def _calculateRowCount(self):
+        total_len = (len(self._data) + self._start_offset)
+        self._row_count = total_len / self._items_per_row
+        if (total_len % self._items_per_row > 0):
+            self._row_count += 1 # Half-empty row
+
+
+
+ 
+class MemoryMap(QtGui.QWidget):
+    """
+    MemoryMap class
+
+    An entire window for display memory visualization (including buttons and all)
+    """
+
+    #
+    # Constants
+    #
+
+
+    DISPLAY_FONT = 'Courier New'
+    DISPLAY_FONT_SIZE = 10
+
+    DEFAULT_LINE_SIZE = 20
+    MAX_LINE_SIZE = 300
+    MIN_LINE_SIZE = 5
+
+    DEFAULT_START_OFFSET = 0
+
+    DEFAULT_ZOOM = 10
+    MIN_ZOOM = 1
+    MAX_ZOOM = 25
+
+    __app_instance = None
+
+
+    def __init__(self, data, color_map, parent = None):
+        """
+        """
+
+        if (QtGui.QApplication.instance() is None):
+            MintGui.__app_instance = QtGui.QApplication(sys.argv)
+
+        QtGui.QWidget.__init__(self, parent)
+
+
+        #
+        # Memory Visualizer (right pane)
+        #
+
+        self.memory_visualizer = MemoryVisualizer(data,
+                MemoryMap.DEFAULT_ZOOM,
+                MemoryMap.DEFAULT_ZOOM,
+                color_map, 0xAABBCC,
+                MemoryMap.DEFAULT_LINE_SIZE)
+
+
+        #
+        # Various Controls (left pane)
+        #
+
+
+        # Line size scroll bar
+        self.line_size_scrollbar = QtGui.QScrollBar(Qt.Horizontal)
+
+        self.start_offset_scrollbar = QtGui.QScrollBar(Qt.Horizontal)
+        self.start_offset_scrollbar.sliderChange = self._onStartOffsetChange
+
+        self.line_size_scrollbar.sliderChange = self._onLineSizeChange
+        self.line_size_scrollbar.setMaximum(MemoryMap.MAX_LINE_SIZE)
+        self.line_size_scrollbar.setMinimum(MemoryMap.MIN_LINE_SIZE)
+        self.line_size_scrollbar.setSingleStep(1)
+        self.line_size_scrollbar.setValue(MemoryMap.DEFAULT_LINE_SIZE)
+
+        self.left_pane = QtGui.QVBoxLayout()
+        self.left_pane.addWidget(QtGui.QLabel("Line Size"))
+        self.left_pane.addWidget(self.line_size_scrollbar)
+
+        # Start offset scroll bar
+        self.start_offset_scrollbar.setMaximum(MemoryMap.DEFAULT_LINE_SIZE - 1)
+        self.start_offset_scrollbar.setMinimum(0)
+        self.start_offset_scrollbar.setSingleStep(1)
+        self.start_offset_scrollbar.setValue(MemoryMap.DEFAULT_START_OFFSET)
+
+        self.left_pane.addWidget(QtGui.QLabel("Start Offset"))
+        self.left_pane.addWidget(self.start_offset_scrollbar)
+
+        # Zoom scroll bar
+        self.zoom_scrollbar = QtGui.QScrollBar(Qt.Horizontal)
+
+        self.zoom_scrollbar.sliderChange = self._onZoomChange
+        self.zoom_scrollbar.setMaximum(MemoryMap.MAX_ZOOM)
+        self.zoom_scrollbar.setMinimum(MemoryMap.MIN_ZOOM)
+        self.zoom_scrollbar.setSingleStep(1)
+        self.zoom_scrollbar.setValue(MemoryMap.DEFAULT_ZOOM)
+
+        self.left_pane.addWidget(QtGui.QLabel("Zoom"))
+        self.left_pane.addWidget(self.zoom_scrollbar)
+
+
+        wid = QtGui.QWidget()
+        wid.setLayout(self.left_pane)
+
+        self.horizontal_layout = QtGui.QHBoxLayout()
+        self.horizontal_splitter = QtGui.QSplitter()
+        self.horizontal_splitter.addWidget(wid)
+        self.horizontal_splitter.addWidget(self.memory_visualizer)
+        self.horizontal_splitter.setOrientation(Qt.Horizontal)
+
+        self.horizontal_layout.addWidget(self.horizontal_splitter)
+        self.setLayout(self.horizontal_layout)
+
+        self.setGeometry(300, 300,
+                400, 250)
+
+        self.setWindowTitle('PyMint: Memory Visualizer')
+
+
+
+    #
+    # Events
+    #
+
+
+    def _onLineSizeChange(self, changeType):
+
+        self.line_size_scrollbar.update()
+
+        if (changeType == QtGui.QSlider.SliderRangeChange):
+            pass
+        elif (changeType == QtGui.QSlider.SliderValueChange):
+            line_size = self.line_size_scrollbar.value()
+            self.start_offset_scrollbar.setMaximum(line_size - 1)
+            self.memory_visualizer.setItemsPerRow(line_size)
+
+    def _onStartOffsetChange(self, changeType):
+
+        self.start_offset_scrollbar.update()
+
+        if (changeType == QtGui.QSlider.SliderRangeChange):
+            pass
+        elif (changeType == QtGui.QSlider.SliderValueChange):
+            self.memory_visualizer.setStartOffset(self.start_offset_scrollbar.value())
+
+
+    def _onZoomChange(self, changeType):
+
+        self.zoom_scrollbar.update()
+
+        if (changeType == QtGui.QSlider.SliderRangeChange):
+            pass
+        elif (changeType == QtGui.QSlider.SliderValueChange):
+            value = self.zoom_scrollbar.value()
+            self.memory_visualizer.setPixelDimensions(value, value)
+
+
+ 
 class ColorLegendItem(QtGui.QWidget):
     """
     ColorLegendItem class
@@ -774,18 +1082,32 @@ class MintGui(QtGui.QWidget):
 
 
 
+SAMPLE_TYPE = "MEMORY_MAP"
+
 
 if (__name__ == '__main__'):
     import random
     data = [chr(random.randrange(0,255)) for i in xrange(1200)]
     data = ''.join(data)
 
-    gui = MintGui(data, 0x4030E0, 4,
-            [(0x4030E4, 8, 'red', 'struct start'),
-                (0x4032D2, 6, 'blue', 'item 1'),
-                (0x4032A2, 16, 'green', 'item 2'),
-                (0x4031A2, 16, 'gray', 'item 4')
-                ], True)
-    gui.show()
+    if (SAMPLE_TYPE == 'MEMORY_MAP'):
+        color_map = {}
+        for i in xrange(256):
+            color_map[i] = (
+                    (random.randint(0, 255) << 16) |
+                    (random.randint(0, 255) << 8) |
+                    (random.randint(0, 255)))
+
+        gui = MemoryMap(data, color_map)
+        gui.show()
+
+    elif (SAMPLE_TYPE == 'MINT_GUI'):
+        gui = MintGui(data, 0x4030E0, 4,
+                [(0x4030E4, 8, 'red', 'struct start'),
+                    (0x4032D2, 6, 'blue', 'item 1'),
+                    (0x4032A2, 16, 'green', 'item 2'),
+                    (0x4031A2, 16, 'gray', 'item 4')
+                    ], True)
+        gui.show()
 
 
