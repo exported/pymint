@@ -46,7 +46,7 @@ class MemoryVisualizer(QtGui.QWidget):
         """
         data - the data to display
         pixel_width, pixel_height - dimensions of each pixel
-        color_map - a dictionary converting from byte value to color
+        color_map - a list converting from byte value to color (item index = byte value)
         background_color - the default color if not data is displayed
         items_per_row - number of pixels per row
         """
@@ -116,6 +116,8 @@ class MemoryVisualizer(QtGui.QWidget):
         self._colorMap()
 
 
+    def saveImage(self, filename):
+        self._last_pm.save(filename)
 
 
     #
@@ -170,6 +172,7 @@ class MemoryVisualizer(QtGui.QWidget):
         # Repaint and resize the color map
         pm = QtGui.QPixmap(self.image)
         self.image_label.setPixmap(pm)
+        self._last_pm = pm
 
         self.image_label.resize(self.image.width(), self.image.height())
  
@@ -177,12 +180,6 @@ class MemoryVisualizer(QtGui.QWidget):
         clr = QtGui.QColor(color)
         painter = QtGui.QPainter(self.image)
         painter.fillRect(x, y, self._pixel_width, self._pixel_height, clr)
-
-        return
-        # OLD WAY
-        for current_x in xrange(x, x + self._pixel_width):
-            for current_y in xrange(y, y + self._pixel_height):
-                self.image.setPixel(current_x, current_y, color)
 
     def _calculateRowCount(self):
         total_len = (len(self._data) + self._start_offset)
@@ -218,11 +215,16 @@ class MemoryMap(QtGui.QWidget):
     MIN_ZOOM = 1
     MAX_ZOOM = 25
 
+
+    DEFAULT_BACKGROUND_COLOR = 0x000000
+
     __app_instance = None
 
 
     def __init__(self, data, color_map, parent = None):
         """
+        data - the data to display
+        color_map - a list converting from byte value to color (item index = byte value)
         """
 
         if (QtGui.QApplication.instance() is None):
@@ -238,7 +240,7 @@ class MemoryMap(QtGui.QWidget):
         self.memory_visualizer = MemoryVisualizer(data,
                 MemoryMap.DEFAULT_ZOOM,
                 MemoryMap.DEFAULT_ZOOM,
-                color_map, 0xAABBCC,
+                color_map, MemoryMap.DEFAULT_BACKGROUND_COLOR,
                 MemoryMap.DEFAULT_LINE_SIZE)
 
 
@@ -260,7 +262,9 @@ class MemoryMap(QtGui.QWidget):
         self.line_size_scrollbar.setValue(MemoryMap.DEFAULT_LINE_SIZE)
 
         self.left_pane = QtGui.QVBoxLayout()
-        self.left_pane.addWidget(QtGui.QLabel("Line Size"))
+        self.line_size_label = QtGui.QLabel("Line Size")
+        self.line_size_label.setMaximumHeight(20)
+        self.left_pane.addWidget(self.line_size_label)
         self.left_pane.addWidget(self.line_size_scrollbar)
 
         # Start offset scroll bar
@@ -269,7 +273,9 @@ class MemoryMap(QtGui.QWidget):
         self.start_offset_scrollbar.setSingleStep(1)
         self.start_offset_scrollbar.setValue(MemoryMap.DEFAULT_START_OFFSET)
 
-        self.left_pane.addWidget(QtGui.QLabel("Start Offset"))
+        self.start_offset_label = QtGui.QLabel("Start Offset")
+        self.start_offset_label.setMaximumHeight(20)
+        self.left_pane.addWidget(self.start_offset_label)
         self.left_pane.addWidget(self.start_offset_scrollbar)
 
         # Zoom scroll bar
@@ -281,8 +287,16 @@ class MemoryMap(QtGui.QWidget):
         self.zoom_scrollbar.setSingleStep(1)
         self.zoom_scrollbar.setValue(MemoryMap.DEFAULT_ZOOM)
 
-        self.left_pane.addWidget(QtGui.QLabel("Zoom"))
+        self.zoom_label = QtGui.QLabel("Zoom")
+        self.zoom_label.setMaximumHeight(20)
+        self.left_pane.addWidget(self.zoom_label)
         self.left_pane.addWidget(self.zoom_scrollbar)
+
+        self.take_screenshot_button = QtGui.QPushButton("Take Screenshot")
+        self.take_screenshot_button.setMinimumHeight(30)
+        self.left_pane.addWidget(self.take_screenshot_button)
+        self.connect(self.take_screenshot_button, SIGNAL("clicked()"), self._onTakeScreenshot)
+
 
 
         wid = QtGui.QWidget()
@@ -308,6 +322,10 @@ class MemoryMap(QtGui.QWidget):
     # Events
     #
 
+
+    def _onTakeScreenshot(self):
+        filename = QtGui.QFileDialog.getSaveFileName(filter = "All Files (*.*);;PNG Files (*.png)", selectedFilter = "PNG Files (*.png)")
+        self.memory_visualizer.saveImage(filename)
 
     def _onLineSizeChange(self, changeType):
 
@@ -1091,9 +1109,9 @@ if (__name__ == '__main__'):
     data = ''.join(data)
 
     if (SAMPLE_TYPE == 'MEMORY_MAP'):
-        color_map = {}
+        color_map = []
         for i in xrange(256):
-            color_map[i] = (
+            color_map.append(
                     (random.randint(0, 255) << 16) |
                     (random.randint(0, 255) << 8) |
                     (random.randint(0, 255)))
