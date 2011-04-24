@@ -25,9 +25,19 @@
 
 
 
-from PyQt4 import QtGui
-from PyQt4.QtCore import Qt, SIGNAL
-from PyQt4 import QtCore
+try:
+    from PyQt4 import QtGui
+    from PyQt4.QtCore import Qt, SIGNAL
+    from PyQt4 import QtCore
+except ImportError, e:
+    # Stabs
+    def qtmissing():
+        print("Qt Module is missing")
+    QtGui = qtmissing
+    QtGui.QWidget = type("qt_is_missing", (object,), {'__init__': qtmissing})
+    Qt = qtmissing
+    SIGNAL = qtmissing
+    QtCore = qtmissing
 import sys
 import struct
 import time
