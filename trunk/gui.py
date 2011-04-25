@@ -42,6 +42,7 @@ import sys
 import struct
 import time
 import copy
+import random
 
 
 
@@ -230,12 +231,23 @@ class MemoryMap(QtGui.QWidget):
 
     __app_instance = None
 
+    def __randomPalette(self):
+        color_map = []
+        for i in xrange(256):
+            color_map.append = (
+                    (random.randint(0, 255) << 16) |
+                    (random.randint(0, 255) << 8) |
+                    (random.randint(0, 255)))
+        return color_map
 
-    def __init__(self, data, color_map, parent = None):
+    def __init__(self, data, color_map=None, parent=None):
         """
         data - the data to display
         color_map - a list converting from byte value to color (item index = byte value)
         """
+
+        if None == color_map:
+            color_map = self.__randomPalette()
 
         if (QtGui.QApplication.instance() is None):
             MintGui.__app_instance = QtGui.QApplication(sys.argv)
@@ -1114,19 +1126,11 @@ SAMPLE_TYPE = "MEMORY_MAP"
 
 
 if (__name__ == '__main__'):
-    import random
     data = [chr(random.randrange(0,255)) for i in xrange(1200)]
     data = ''.join(data)
 
     if (SAMPLE_TYPE == 'MEMORY_MAP'):
-        color_map = []
-        for i in xrange(256):
-            color_map.append(
-                    (random.randint(0, 255) << 16) |
-                    (random.randint(0, 255) << 8) |
-                    (random.randint(0, 255)))
-
-        gui = MemoryMap(data, color_map)
+        gui = MemoryMap(data)
         gui.show()
 
     elif (SAMPLE_TYPE == 'MINT_GUI'):
